@@ -6,6 +6,7 @@ from statsmodels.gam.api import GLMGam, BSplines
 from .harmonizationApply import applyStandardizationAcrossFeatures
 from neuroCombat.neuroCombat import make_design_matrix, find_parametric_adjustments, adjust_data_final, aprior, bprior
 import copy
+from tqdm import tqdm
 
 def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bounds=(None, None),
                        ref_batch=None, return_s_data=False,
@@ -300,7 +301,7 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model):
         # initialize an empty matrix for beta
         B_hat = np.zeros((design.shape[1], X.shape[0]))
         # estimate beta for each variable to be harmonized
-        for i in range(0, X.shape[0]):
+        for i in tqdm(range(0, X.shape[0])):
             df_gam.loc[:, 'y'] = X[i, :]
             gam_bs = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
             res_bs = gam_bs.fit()
