@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bounds=(None, None),
                        ref_batch=None, return_s_data=False,
-                       orig_model=None, seed=None):
+                       orig_model=None, seed=None, penweight_mode='kfold'):
     """
     Wrapper for neuroCombat function that returns the harmonization model.
     
@@ -191,7 +191,7 @@ def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bound
     # run steps to perform ComBat
     if orig_model is None:
         s_data, stand_mean, var_pooled, mod_mean, B_hat = standardizeAcrossFeatures(
-            data, design, info_dict, smooth_model)
+            data, design, info_dict, smooth_model, penweight_mode=penweight_mode)
         LS_dict = fitLSModelAndFindPriors(s_data, design, info_dict, eb=eb)
         # optional: avoid EB estimates
         if eb:
@@ -275,7 +275,7 @@ def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bound
     else:
         return model, bayes_data
 
-def standardizeAcrossFeatures(X, design, info_dict, smooth_model):
+def standardizeAcrossFeatures(X, design, info_dict, smooth_model, penweight_mode='kfold'):
     """
     The original neuroCombat function standardize_across_features plus
     necessary modifications.
@@ -304,10 +304,13 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model):
         for i in tqdm(range(0, X.shape[0])):
             df_gam.loc[:, 'y'] = X[i, :]
             gam_bs = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
-            res_bs = gam_bs.fit()
+            res_bs = gam_bs.fit() #not sure whether this pre-fit is useful
             # Optimal penalization weights alpha can be obtained through gcv/kfold
             # Note: kfold is faster, gcv is more robust
-            gam_bs.alpha = gam_bs.select_penweight_kfold()[0]
+            if penweight_mode=='kfold':
+                gam_bs.alpha = gam_bs.select_penweight_kfold()[0]
+            else:
+                gam_bs.alpha = gam_bs.select_penweight(criterion=penweight_mode)[0]
             res_bs_optim = gam_bs.fit()
             B_hat[:, i] = res_bs_optim.params
     ###
