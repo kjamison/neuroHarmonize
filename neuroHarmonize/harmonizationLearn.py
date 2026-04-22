@@ -7,6 +7,8 @@ from .harmonizationApply import applyStandardizationAcrossFeatures
 from neuroCombat.neuroCombat import make_design_matrix, find_parametric_adjustments, adjust_data_final, aprior, bprior
 import copy
 from tqdm import tqdm
+from joblib import Parallel, delayed
+from tqdm_joblib import tqdm_joblib
 
 def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bounds=(None, None),
                        ref_batch=None, return_s_data=False,
@@ -301,18 +303,47 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model, penweight_mode
         # initialize an empty matrix for beta
         B_hat = np.zeros((design.shape[1], X.shape[0]))
         # estimate beta for each variable to be harmonized
-        for i in tqdm(range(0, X.shape[0])):
-            df_gam.loc[:, 'y'] = X[i, :]
-            gam_bs = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
-            res_bs = gam_bs.fit() #not sure whether this pre-fit is useful
-            # Optimal penalization weights alpha can be obtained through gcv/kfold
-            # Note: kfold is faster, gcv is more robust
-            if penweight_mode=='kfold':
-                gam_bs.alpha = gam_bs.select_penweight_kfold()[0]
-            else:
-                gam_bs.alpha = gam_bs.select_penweight(criterion=penweight_mode)[0]
-            res_bs_optim = gam_bs.fit()
-            B_hat[:, i] = res_bs_optim.params
+                
+        use_parallel_fitting=get_available_cpus() > 1 and os.environ.get('OMP_NUM_THREADS',"") == "1"
+
+        if use_parallel_fitting:
+            def fit_one_feature(y, exog_linear, smoother, alpha=0.1):
+                # Construct GLM inside worker (to avoid patsy pickling issue)
+                gam_i = GLMGam(y, exog=exog_linear, smoother=smoother, alpha=alpha)
+                res_i = gam_i.fit() #not sure whether this pre-fit is useful
+                if penweight_mode=='kfold':
+                    gam_i.alpha = gam_i.select_penweight_kfold()[0]
+                else:
+                    gam_i.alpha = gam_i.select_penweight(criterion=penweight_mode)[0]
+                res_i_optim = gam_i.fit()
+                return res_i_optim.params
+            
+            #generate an initial GLMGam object to handle formula and input formatting,
+            #then pass those to each worker
+            df_gam.loc[:,'y']=X[0,:]
+            gam0 = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
+            gam0_exog_linear=gam0.exog_linear
+            gam0_smoother=gam0.smoother
+            with tqdm_joblib(tqdm(total=X.shape[0], desc="Feature GAM")) as progress_bar:
+                results = Parallel(n_jobs=get_available_cpus(), backend="loky")(
+                    delayed(fit_one_feature)(X[i, :], exog_linear=gam0_exog_linear, smoother=gam0_smoother, alpha=alpha)
+                    for i in range(X.shape[0])
+                )
+        
+            B_hat=np.stack(results,axis=1)
+        else:
+            for i in tqdm(range(0, X.shape[0])):
+                df_gam.loc[:, 'y'] = X[i, :]
+                gam_bs = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
+                res_bs = gam_bs.fit() #not sure whether this pre-fit is useful
+                # Optimal penalization weights alpha can be obtained through gcv/kfold
+                # Note: kfold is faster, gcv is more robust
+                if penweight_mode=='kfold':
+                    gam_bs.alpha = gam_bs.select_penweight_kfold()[0]
+                else:
+                    gam_bs.alpha = gam_bs.select_penweight(criterion=penweight_mode)[0]
+                res_bs_optim = gam_bs.fit()
+                B_hat[:, i] = res_bs_optim.params
     ###
     else:
         B_hat = np.dot(np.dot(np.linalg.inv(np.dot(design.T, design)), design.T), X.T)
@@ -405,3 +436,14 @@ def saveHarmonizationModel(model, file_name):
     out_file.close()
     
     return None
+
+
+def get_available_cpus():
+    #if NUM_THREADS is not None and NUM_THREADS > 0:
+    #    return NUM_THREADS
+    #return multiprocessing.cpu_count()
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:
+        #fallback for non-Linux
+        return int(os.environ.get("SLURM_CPUS_PER_TASK", os.cpu_count()))
