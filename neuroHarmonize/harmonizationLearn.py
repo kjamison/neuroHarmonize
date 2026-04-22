@@ -307,8 +307,9 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model, penweight_mode
         use_parallel_fitting=get_available_cpus() > 1 and os.environ.get('OMP_NUM_THREADS',"") == "1"
 
         if use_parallel_fitting:
-            def fit_one_feature(y, exog_linear, smoother, alpha=0.1):
+            def fit_one_feature(y, exog_linear, smoother_dict, alpha=0.1):
                 # Construct GLM inside worker (to avoid patsy pickling issue)
+                smoother = BSplines(smoother_dict['x'], df=smoother_dict['dfs'], degree=smoother_dict['degrees'])
                 gam_i = GLMGam(y, exog=exog_linear, smoother=smoother, alpha=alpha)
                 res_i = gam_i.fit() #not sure whether this pre-fit is useful
                 if penweight_mode=='kfold':
@@ -322,11 +323,13 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model, penweight_mode
             #then pass those to each worker
             df_gam.loc[:,'y']=X[0,:]
             gam0 = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
-            gam0_exog_linear=gam0.exog_linear
-            gam0_smoother=gam0.smoother
+            gam0_exog_linear=np.asarray(gam0.exog_linear)
+            gam0_smoother_dict={'x':gam0.smoother.x,'dfs':gam0.smoother.dfs,'degrees':gam0.smoother.degrees}
             with tqdm_joblib(tqdm(total=X.shape[0], desc="Feature GAM")) as progress_bar:
                 results = Parallel(n_jobs=get_available_cpus(), backend="loky")(
-                    delayed(fit_one_feature)(X[i, :], exog_linear=gam0_exog_linear, smoother=gam0_smoother, alpha=alpha)
+                    delayed(fit_one_feature)(X[i, :], exog_linear=gam0_exog_linear, 
+                                             smoother_dict=gam0_smoother_dict, 
+                                             alpha=alpha)
                     for i in range(X.shape[0])
                 )
         
