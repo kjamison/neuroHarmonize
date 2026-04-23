@@ -325,7 +325,7 @@ def standardizeAcrossFeatures(X, design, info_dict, smooth_model, penweight_mode
             gam0 = GLMGam.from_formula(formula, data=df_gam, smoother=bs, alpha=alpha)
             gam0_exog_linear=np.asarray(gam0.exog_linear)
             gam0_smoother_dict={'x':gam0.smoother.x,'dfs':gam0.smoother.dfs,'degrees':gam0.smoother.degrees}
-            with tqdm_joblib(tqdm(total=X.shape[0], desc="Feature GAM")) as progress_bar:
+            with tqdm_joblib(total=X.shape[0], desc="Feature GAM") as progress_bar:
                 results = Parallel(n_jobs=get_available_cpus(), backend="loky")(
                     delayed(fit_one_feature)(X[i, :], exog_linear=gam0_exog_linear, 
                                              smoother_dict=gam0_smoother_dict, 
