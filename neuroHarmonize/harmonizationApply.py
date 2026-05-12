@@ -7,7 +7,7 @@ from statsmodels.gam.api import BSplines
 from neuroCombat.neuroCombat import make_design_matrix, adjust_data_final
 import copy
 
-def harmonizationApply(data, covars, model, return_stand_mean=False):
+def harmonizationApply(data, covars, model, return_stand_mean=False, return_stand_mean_plus_mod_mean=False):
     """
     Applies harmonization model with neuroCombat functions to new data.
     
@@ -112,6 +112,8 @@ def harmonizationApply(data, covars, model, return_stand_mean=False):
     #return either bayes_data or both
     if return_stand_mean:
         return bayes_data, stand_mean
+    elif return_stand_mean_plus_mod_mean:
+        return bayes_data, stand_mean+mod_mean.T
     else:
         return bayes_data
 
