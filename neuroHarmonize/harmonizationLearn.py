@@ -128,7 +128,7 @@ def harmonizationLearn(data, covars, eb=True, smooth_terms=[], smooth_term_bound
             ref_batch=None
             print('[neuroHarmonize] batch.ref not found. Setting to None.')
         else:
-            ref_level = int(covars[ref_indices[0],batch_col])
+            ref_level = int(covars[ref_indices[0],batch_col][0])
 
     # create dictionary that stores batch info
     (batch_levels, sample_per_batch) = np.unique(covars[:,batch_col],return_counts=True)
